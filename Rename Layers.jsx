@@ -3,6 +3,8 @@
 // Layer renaming script that uses keyword replacements.
 // Version 1.0.
 
+// https://github.com/joonaspaakko/Photoshop-Rename-Layers-Script
+
 // Protip: You can unselect layers inside a group by double clicking the arrow
 // next to the group while holding down Cmd on Mac and Ctrl on windows
 
@@ -31,6 +33,8 @@
 // - Known "issue": Doesn't work with the background layer.
 //   Background layer is always called "Background". It works just
 //   fine if you turn the background layer into a normal layer first.
+
+#target photoshop
 
 if ( app.documents.length > 0 ) {
   app.activeDocument.suspendHistory("Rename Layers (script)", "renameLayers()");
