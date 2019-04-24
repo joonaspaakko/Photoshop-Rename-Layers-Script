@@ -1,7 +1,7 @@
 
 // Rename Layers.jsx
 // Layer renaming script that uses keyword replacements.
-// Version 1.0.
+// Version 1.1.
 
 // https://github.com/joonaspaakko/Photoshop-Rename-Layers-Script
 
@@ -27,6 +27,10 @@
 // Changelog:
 // ==========
 
+// V.1.1.
+// - Tested in Photoshop CC 2019
+// - Minor code changes. Just made it a little cleaner in places... No difference in functionality.
+
 // V.1.0.
 // - First version
 // - Tested in Photoshop CC 2019
@@ -50,24 +54,23 @@ function renameLayers() {
   
   if ( dialogText !== null ) {
     
-    var selectedLayersIdx = getSelectedLayersIdx();
-    var layersLength = selectedLayersIdx.length;
-    var layerIDs = [];
+    var selectedLayers = getSelectedLayers();
+    var layersLength = selectedLayers.id.length;
+		
     var ascendingNumber = layersLength;
     var descendingNumber = 0;
     
     for( var i=0; i < layersLength; i++ ) {
-      var activeID = changeLayerIdxToLayerID( selectedLayersIdx[i] );
-      selectLayerByID( activeID );
-      layerIDs.push( activeID );
-      var layer = app.activeDocument.activeLayer;
+      var layer = selectedLayers.obj[i];
       var newName = replacements( dialogText, ascendingNumber, descendingNumber );
+      var visibility = layer.visible;
       layer.name = newName;
+      layer.visible = visibility;
       --ascendingNumber;
       ++descendingNumber;
     }
     
-    rebuildSelection( layerIDs );
+    buildSelectionWithIDs( selectedLayers.id );
     
   }
   
@@ -207,73 +210,59 @@ function replacements( string, ascendingNumber, descendingNumber ) {
   
 }
 
-function rebuildSelection( layerIDs ) {
-  for (var i = 0; i < layerIDs.length; i++) {
-    selectLayerByID( layerIDs[i], true );
+// Builds selection from an array of IDs
+function buildSelectionWithIDs( ids ) {
+  for ( var i = 0; i < ids.length; i++ ) {
+    selectLayerByID( ids[i], (i===0) ? false : "add" );
   }
 }
 
-function getSelectedLayersID() {
-  var selectedLayersIdx = getSelectedLayersIdx();
-  var selectedLayersID = new Array;
-  for(var i=0;i<selectedLayersIdx.length;i++){
-    var activeID = changeLayerIdxToLayerID(selectedLayersIdx[i]);
-    selectLayerByID( activeID );
-		selectedLayersID.push( activeID );
-  }
-  return selectedLayersID;
-}
-
-function selectLayerByID( id, add ) {
-  add = (add == undefined) ? add = false : add;
+// selectLayerByID( id ) - Selects a layer ignoring current selection.
+// selectLayerByID( id, "add" ) - Adds the layer to the selection.
+// selectLayerByID( id, "remove" ) - Removes the layers from the selection.
+function selectLayerByID( id, action ) {
+  function cTID(s) { return app.charIDToTypeID(s); };
+  function sTID(s) { return app.stringIDToTypeID(s); };
   var ref = new ActionReference();
-  ref.putIdentifier(charIDToTypeID('Lyr '), id);
+  ref.putIdentifier(cTID('Lyr '), id);
   var desc = new ActionDescriptor();
-  desc.putReference(charIDToTypeID('null'), ref);
-  if(add){
-    desc.putEnumerated(stringIDToTypeID('selectionModifier'), stringIDToTypeID('selectionModifierType'), stringIDToTypeID('addToSelection'));
+  desc.putReference(cTID('null'), ref);
+  if ( action ) {
+    desc.putEnumerated(
+      sTID('selectionModifier'),
+      sTID('selectionModifierType'),
+      ( action === 'remove' ? sTID('removeFromSelection') : sTID('addToSelection') )
+    );
   }
-  desc.putBoolean(charIDToTypeID('MkVs'), false);
-	executeAction(charIDToTypeID('slct'), desc, DialogModes.NO);
+  desc.putBoolean(cTID('MkVs'), false);
+  executeAction(cTID('slct'), desc, DialogModes.NO);
 }
 
-function getSelectedLayersIdx() {
-  var selectedLayers = new Array;
+function getSelectedLayers() {
+  function cTID(s) { return app.charIDToTypeID(s); };
+  function sTID(s) { return app.stringIDToTypeID(s); };
+  var ids = [];
+  var objs = [];
   var ref = new ActionReference();
-  ref.putEnumerated( charIDToTypeID('Dcmn'), charIDToTypeID('Ordn'), charIDToTypeID('Trgt') );
+  ref.putEnumerated( cTID('Dcmn'), cTID('Ordn'), cTID('Trgt') );
   var desc = executeActionGet(ref);
-  if( desc.hasKey( stringIDToTypeID( 'targetLayers' ) ) ){
-    desc = desc.getList( stringIDToTypeID( 'targetLayers' ));
-    var c = desc.count
-    var selectedLayersIdx = new Array();
-    for(var i=0;i<c;i++){
-      try{
-        activeDocument.backgroundLayer;
-        selectedLayersIdx.push( desc.getReference( i ).getIndex() );
-      } catch(e){
-        selectedLayersIdx.push( desc.getReference( i ).getIndex()+1 );
-      }
+  if ( desc.hasKey(sTID('targetLayers')) ) {
+    desc = desc.getList( sTID( 'targetLayers' ));
+    var c = desc.count;
+    for ( var i=0; i<c; i++ ) {
+      var n = 0;
+      try { activeDocument.backgroundLayer; } catch(e) { n = 1; }
+      var idx = desc.getReference( i ).getIndex()+n;
+      toIdRef = new ActionReference();
+      toIdRef.putProperty( cTID("Prpr") , cTID( "LyrI" ));
+      toIdRef.putIndex( cTID( "Lyr " ), idx );
+      var id = executeActionGet(toIdRef).getInteger( sTID( "layerID" ));
+      ids.push( id );
+      selectLayerByID( id );
+      objs.push( app.activeDocument.activeLayer );
     }
   }
-  else {
-    var ref = new ActionReference();
-    ref.putProperty( charIDToTypeID('Prpr') , charIDToTypeID( 'ItmI' ));
-    ref.putEnumerated( charIDToTypeID('Lyr '), charIDToTypeID('Ordn'), charIDToTypeID('Trgt') );
-    try{
-      activeDocument.backgroundLayer;
-      selectedLayersIdx.push( executeActionGet(ref).getInteger(charIDToTypeID( 'ItmI' ))-1);
-    }catch(e){
-      selectedLayersIdx.push( executeActionGet(ref).getInteger(charIDToTypeID( 'ItmI' )));
-    }
-  }
-  return selectedLayersIdx;
-};
-
-function changeLayerIdxToLayerID(idx) {
-  ref = new ActionReference();
-  ref.putProperty( charIDToTypeID("Prpr") , charIDToTypeID( "LyrI" ));
-  ref.putIndex( charIDToTypeID( "Lyr " ), idx );
-  return executeActionGet(ref).getInteger( stringIDToTypeID( "layerID" ));
+  return {id:ids, obj:objs};
 }
 
 function createDialog( previousLayerNames, textFilePath ) {
