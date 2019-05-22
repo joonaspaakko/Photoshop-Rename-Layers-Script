@@ -13,8 +13,10 @@
   Example scenario
   ================
   
-  Current layer name is:
-  Button1
+  Layer name: Button1 
+  Layer width: 120
+  Layer height: 120
+  Rulerunits: px
   
   Renaming with this:
   {layer:name:lowercase}-{layer:width}x{layer:height}{doc:rulerunits}.png
@@ -26,6 +28,12 @@
 // ==========
 // Changelog:
 // ==========
+
+// V.1.2.
+// - Tested in Photoshop CC 2019
+// - Slight speed improvement
+// - I switched around the number preview arrows ↑/↓ so it makes more sense.
+// - Added a progressbar for CC 2015 and later versions.
 
 // V.1.1.
 // - Tested in Photoshop CC 2019
@@ -41,6 +49,33 @@
 #target photoshop
 
 if ( app.documents.length > 0 ) {
+
+  var gd = {};
+  gd.doc = app.activeDocument;
+  gd.docName = gd.doc.name;
+  gd.docWidth = parseInt( gd.doc.width.value, 10);
+  gd.docHeight = parseInt( gd.doc.height.value, 10);
+  gd.rulerUnits = app.preferences.rulerUnits.toString().split('.')[1].toLowerCase();
+  gd.date = new Date();
+  gd.year = gd.date.getFullYear();
+  gd.month = gd.date.getMonth()+1;
+  gd.month0 = ("0" + (gd.date.getMonth()+1)).slice(-2);
+  gd.day = gd.date.getDate();
+  gd.day0 = ("0" + (gd.date.getDate())).slice(-2);
+  gd.ascendingNumber = '$';
+  gd.descendingNumber = '$';
+  gd.n0 = '$' + String.fromCharCode('0x2193');
+  gd.n1 = '$' + String.fromCharCode('0x2193');
+  gd.nn0 = '$' + String.fromCharCode('0x2191');
+  gd.nn1 = '$' + String.fromCharCode('0x2191');
+  gd.progress = {
+    length: 0,
+    step: 0
+  };
+
+  var appVersion = parseInt( app.version );
+  var cc2014 = 15;
+
   app.activeDocument.suspendHistory("Rename Layers (script)", "renameLayers()");
 }
 
@@ -54,29 +89,92 @@ function renameLayers() {
   
   if ( dialogText !== null ) {
     
-    var selectedLayers = getSelectedLayers();
-    var layersLength = selectedLayers.id.length;
-		
-    var ascendingNumber = layersLength;
-    var descendingNumber = 0;
-    
-    for( var i=0; i < layersLength; i++ ) {
-      var layer = selectedLayers.obj[i];
-      var newName = replacements( dialogText, ascendingNumber, descendingNumber );
-      var visibility = layer.visible;
-      layer.name = newName;
-      layer.visible = visibility;
-      --ascendingNumber;
-      ++descendingNumber;
+    var ref = new ActionReference();
+    ref.putEnumerated( charIDToTypeID('Dcmn'), charIDToTypeID('Ordn'), charIDToTypeID('Trgt') );
+    var desc = executeActionGet(ref);
+    if ( desc.hasKey(stringIDToTypeID('targetLayers')) ) {
+
+      desc = desc.getList( stringIDToTypeID( 'targetLayers' ));
+      var c = desc.count;
+      gd.progress.length = c*2;
+      gd.idxs = [];
+      gd.ascendingNumber = c;
+      gd.descendingNumber = 0;
+
+      if ( appVersion <= cc2014 ) {
+        renameLayers(c,desc);
+      }
+      else {
+        app.doProgress("", "renameLayers(c,desc)");
+      }
+      
+      function renameLayers(c, desc ) {
+        try {
+
+          for ( var i=0; i<c; i++ ) {
+            gd.n0 = gd.ascendingNumber-1;
+            gd.n1 = gd.ascendingNumber;
+            gd.nn0 = gd.descendingNumber;
+            gd.nn1 = gd.descendingNumber+1;
+              
+            var n = 0;
+            try { activeDocument.backgroundLayer; } catch(e) { n = 1; }
+            var idx = desc.getReference( i ).getIndex()+n;
+            gd.idxs.push( idx );
+            var ref2 = new ActionReference();
+            ref2.putIndex(charIDToTypeID('Lyr '), idx);
+            var desc2 = new ActionDescriptor();
+            desc2.putReference(charIDToTypeID('null'), ref2);
+            desc2.putBoolean(charIDToTypeID('MkVs'), false);
+            executeAction(charIDToTypeID('slct'), desc2, DialogModes.NO);
+            
+            var newName = replacements( gd, dialogText );
+            
+            gd.doc.activeLayer.name = newName;
+            
+            --gd.ascendingNumber;
+            ++gd.descendingNumber;
+            ++gd.progress.step;
+
+            if (appVersion > cc2014) app.updateProgress(gd.progress.step, gd.progress.length);
+
+          }
+
+          buildSelectionWithIdxs( gd.idxs );
+        } catch(e) {}
+      }
+
+
     }
-    
-    buildSelectionWithIDs( selectedLayers.id );
-    
+
   }
   
 }
 
-function replacements( string, ascendingNumber, descendingNumber ) {
+
+// Builds selection from an array of Indexes
+function buildSelectionWithIdxs( idxs ) {
+  for ( var i = 0; i < idxs.length; i++ ) {
+
+    var add = (i===0) ? false : true;
+    var ref = new ActionReference();
+    var n = 0;
+    // var n = -1; try { activeDocument.backgroundLayer; } catch(e) { n = 0; }
+    ref.putIndex(charIDToTypeID('Lyr '), idxs[i] + n);
+    var desc = new ActionDescriptor();
+    desc.putReference(charIDToTypeID('null'), ref);
+    if ( add ) desc.putEnumerated( stringIDToTypeID('selectionModifier'), stringIDToTypeID('selectionModifierType'), stringIDToTypeID('addToSelection'));
+    desc.putBoolean(charIDToTypeID('MkVs'), false);
+    executeAction(charIDToTypeID('slct'), desc, DialogModes.NO);
+
+    ++gd.progress.step;
+          
+    if (appVersion > cc2014) app.updateProgress(gd.progress.step, gd.progress.length);
+
+  }
+}
+
+function replacements( gd, string ) {
   
   var r = [
     
@@ -103,6 +201,12 @@ function replacements( string, ascendingNumber, descendingNumber ) {
     "{nn}", "{nn:1}" // Descending - incremental numbers
   ];
   
+  var layer = gd.doc.activeLayer;
+  var layerName = layer.name;
+  var layerBounds = layer.bounds;
+  var layerWidth = parseInt( layerBounds[2].value - layerBounds[0].value, 10);
+  var layerHeight = parseInt( layerBounds[3].value - layerBounds[1].value, 10);
+  
   for (var i = 0; i < r.length; i++) {
     if ( string.match( r[i] ) !== null ) {
       
@@ -110,96 +214,85 @@ function replacements( string, ascendingNumber, descendingNumber ) {
       switch ( r[i] ) {
         
         case "{doc:name}":
-          v = app.activeDocument.name;
+          v = gd.docName;
           break;
         case "{doc:name:lowercase}":
-          v = app.activeDocument.name.toLowerCase();
+          v = gd.docName.toLowerCase();
           break;
           
         case "{doc:width}":
-          v = parseInt( app.activeDocument.width.value, 10);
+          v = gd.docWidth;
           break;
         case "{doc:height}":
-          v = parseInt( app.activeDocument.height.value, 10);
+          v = gd.docHeight;
           break;
 				
         case "{doc:rulerunits}":
-          var rulerUnits = app.preferences.rulerUnits.toString().split('.')[1].toLowerCase();
-          if ( rulerUnits === 'percent' ) {
+          if ( gd.rulerUnits === 'percent' ) {
             rulerUnits = '%';
           }
-          else if ( rulerUnits === 'pixels' ) {
+          else if ( gd.rulerUnits === 'pixels' ) {
             rulerUnits = 'px';
           }
-          else if ( rulerUnits === 'points' ) {
+          else if ( gd.rulerUnits === 'points' ) {
             rulerUnits = 'pts';
+          }
+          else {
+            rulerUnits = gd.rulerUnits;
           }
           v = rulerUnits;
           break;
         
         case "{layer:name}":
-          v = app.activeDocument.activeLayer.name;
+          v = layerName;
           break;
         case "{layer:name:lowercase}":
-          v = app.activeDocument.activeLayer.name.toLowerCase();
+          v = layerName.toLowerCase();
           break;
           
         case "{layer:width}":
         case "{layer:height}":
-          var bounds = app.activeDocument.activeLayer.bounds;
-          var width = parseInt( bounds[2].value - bounds[0].value, 10);
-          var height = parseInt( bounds[3].value - bounds[1].value, 10);
-          v = r[i] === "layer:width" ? width : height;
+          v = r[i] === "layer:width" ? layerWidth : layerHeight;
           break;
         
 				case "{year}":
-						var date = new Date();
-						var year = date.getFullYear();
-						v = year;
+						v = gd.year;
 					break;
           
 				case "{month}":
-						var date = new Date();
-						var month = date.getMonth()+1;
-						v = month;
+						v = gd.month;
 					break;
 					
 				case "{month:0}":
-						var date = new Date();
-						var month = date.getMonth()+1;
-						v = ("0" + month).slice(-2);
+						v = gd.month0;
 					break;
 					
 				case "{day}":
-						var date = new Date();
-						var day = date.getDate();
-						v = day;
+						v = gd.day;
 					break;
 					
 				case "{day:0}":
-						var date = new Date();
-						var day = date.getDate();
-						v = ("0" + day).slice(-2);
+						v = gd.day0;
 					break;
         
         // 0,1,2
 				case "{n:0}":
-					v = ascendingNumber === '$' ? '$' + String.fromCharCode('0x2191') : ascendingNumber-1;
+					v = gd.n0;
 					break;
         // 1,2,3
         case "{n:1}":
         case "{n}":
-          v = ascendingNumber === '$' ? '$' + String.fromCharCode('0x2191') : ascendingNumber;
+          v = gd.n1;
           break;
           
         // 2,1,0
 				case "{nn:0}":
-					v = ascendingNumber === '$' ? '$' + String.fromCharCode('0x2193') : descendingNumber;
+					v = gd.nn0;
 					break;
 				// 3,2,1
         case "{nn:1}":
         case "{nn}":
-          v = descendingNumber === '$' ? '$' + String.fromCharCode('0x2193') : descendingNumber+1;
+          v = gd.nn1;
           break;
       }
       string = string.split( r[i] ).join( v );
@@ -208,61 +301,6 @@ function replacements( string, ascendingNumber, descendingNumber ) {
   
   return string;
   
-}
-
-// Builds selection from an array of IDs
-function buildSelectionWithIDs( ids ) {
-  for ( var i = 0; i < ids.length; i++ ) {
-    selectLayerByID( ids[i], (i===0) ? false : "add" );
-  }
-}
-
-// selectLayerByID( id ) - Selects a layer ignoring current selection.
-// selectLayerByID( id, "add" ) - Adds the layer to the selection.
-// selectLayerByID( id, "remove" ) - Removes the layers from the selection.
-function selectLayerByID( id, action ) {
-  function cTID(s) { return app.charIDToTypeID(s); };
-  function sTID(s) { return app.stringIDToTypeID(s); };
-  var ref = new ActionReference();
-  ref.putIdentifier(cTID('Lyr '), id);
-  var desc = new ActionDescriptor();
-  desc.putReference(cTID('null'), ref);
-  if ( action ) {
-    desc.putEnumerated(
-      sTID('selectionModifier'),
-      sTID('selectionModifierType'),
-      ( action === 'remove' ? sTID('removeFromSelection') : sTID('addToSelection') )
-    );
-  }
-  desc.putBoolean(cTID('MkVs'), false);
-  executeAction(cTID('slct'), desc, DialogModes.NO);
-}
-
-function getSelectedLayers() {
-  function cTID(s) { return app.charIDToTypeID(s); };
-  function sTID(s) { return app.stringIDToTypeID(s); };
-  var ids = [];
-  var objs = [];
-  var ref = new ActionReference();
-  ref.putEnumerated( cTID('Dcmn'), cTID('Ordn'), cTID('Trgt') );
-  var desc = executeActionGet(ref);
-  if ( desc.hasKey(sTID('targetLayers')) ) {
-    desc = desc.getList( sTID( 'targetLayers' ));
-    var c = desc.count;
-    for ( var i=0; i<c; i++ ) {
-      var n = 0;
-      try { activeDocument.backgroundLayer; } catch(e) { n = 1; }
-      var idx = desc.getReference( i ).getIndex()+n;
-      toIdRef = new ActionReference();
-      toIdRef.putProperty( cTID("Prpr") , cTID( "LyrI" ));
-      toIdRef.putIndex( cTID( "Lyr " ), idx );
-      var id = executeActionGet(toIdRef).getInteger( sTID( "layerID" ));
-      ids.push( id );
-      selectLayerByID( id );
-      objs.push( app.activeDocument.activeLayer );
-    }
-  }
-  return {id:ids, obj:objs};
 }
 
 function createDialog( previousLayerNames, textFilePath ) {
@@ -641,9 +679,7 @@ function createDialog( previousLayerNames, textFilePath ) {
 
 
   // CUSTOMIZATION
-  
-  
-  
+
   layerNameInput.onActivate = function() {
     dialogTextReplacement();
   };
@@ -652,13 +688,11 @@ function createDialog( previousLayerNames, textFilePath ) {
   };
   
   function dialogTextReplacement() {
-    var ascendingNumber = '$';
-    var descendingNumber = '$';
-    var newName = replacements( layerNameInput.text, ascendingNumber, descendingNumber );
+    var newName = replacements( gd, layerNameInput.text );
     dialog.layout.layout(true);
     previewText.text = newName;
     previewText.minimumSize.width = 10;
-  }
+  } 
   
   layerNameInput.active = true;
   
@@ -709,7 +743,6 @@ function createDialog( previousLayerNames, textFilePath ) {
   return newText;
   
 }
-
 
 function writeFile( filePath, array ) {
 	
